@@ -1,0 +1,110 @@
+version: "3"
+
+services:
+  orion:
+    container_name: orion
+    image: fiware/orion
+    links:
+      - oriondb
+    ports:
+      - "1026:1026"
+    command: -dbhost oriondb
+
+  ckan:
+    container_name: ckan
+    build:
+      context: ckan-base/2.8/
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    links:
+      - db
+      - solr
+      - redis
+      - datapusher
+      - wirecloud
+    ports:
+      - "0.0.0.0:${CKAN_PORT}:5000"
+    volumes:
+      - ckan_storage:/var/lib/ckan
+
+  wirecloud:
+    container_name: wirecloud
+    image: fiware/wirecloud:latest
+    environment:
+      - DB_HOST=db
+      - DB_NAME=wirecloud
+      - DB_USERNAME=wirecloud
+      - DB_PASSWORD=gaY0JIECZ2k7#0vO1475#pvm4nHzCgJ
+      - FORCE_DOMAIN=${WIRECLOUD_FORCE_DOMAIN}
+    volumes:
+      - ./wirecloud:/opt/wirecloud_instance/data
+      - wirecloud_static:/var/www/static
+      - ./wirecloud/settings.py:/opt/wirecloud_instance/wirecloud_instance/settings.py
+
+  cygnus:
+    container_name: cygnus
+    build:
+      context: cygnus/
+      dockerfile: Dockerfile
+    environment:
+      - CYGNUS_CKAN_HOST=ckan
+      - CYGNUS_CKAN_PORT=${CKAN_PORT}
+      - CYGNUS_CKAN_API_KEY=f49519fa-94e7-4f89-878b-9e25778097dd
+      - CYGNUS_CKAN_ORION_URL=orion:1026
+      - CYGNUS_CKAN_DATA_MODEL=dm-by-service-path
+      - CYGNUS_CKAN_ATTR_PERSISTENCE=row
+    ports:
+      - "5052:5052"
+      - "5080:5080"
+
+  datapusher:
+    container_name: datapusher
+    build:
+      context: datapusher/
+    ports:
+      - "8800:8800"
+
+  db:
+    container_name: db
+    build:
+      context: postgresql/
+      args:
+        - DATASTORE_READONLY_PASSWORD=${DATASTORE_READONLY_PASSWORD}
+        - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    environment:
+      - DATASTORE_READONLY_PASSWORD=${DATASTORE_READONLY_PASSWORD}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  solr:
+    container_name: solr
+    build:
+      context: solr/
+    volumes:
+      - solr_data:/opt/solr/server/solr/ckan/data/index
+
+  redis:
+    container_name: redis
+    image: redis:alpine
+
+  nginx:
+    image: nginx
+    ports:
+      - 8080:80
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - wirecloud_static:/var/www/static:ro
+    depends_on:
+      - wirecloud
+
+  oriondb:
+    image: mongo:3.6
+    command: --nojournal
+
+volumes:
+  ckan_storage:
+  pg_data:
+  solr_data:
+  wirecloud_static:
